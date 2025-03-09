@@ -34,7 +34,11 @@ const twitchClient = new tmi.Client({
   options: { debug: true },
   identity: {
     username: process.env.TWITCH_BOT_USERNAME,
-    password: `oauth:${process.env.TWITCH_ACCESS_TOKEN}` // Using access token from Twitch OAuth
+    password: process.env.TWITCH_USER_TOKEN 
+      ? (process.env.TWITCH_USER_TOKEN.startsWith('oauth:') 
+          ? process.env.TWITCH_USER_TOKEN 
+          : `oauth:${process.env.TWITCH_USER_TOKEN}`)
+      : 'oauth:placeholder' // Will be replaced when token is loaded
   },
   channels: [process.env.TWITCH_CHANNEL]
 });
@@ -52,25 +56,30 @@ const discordClient = new Client({
 async function startServer() {
   try {
     // Load tokens from database
-    await db.loadAllTokens().catch(err => {
-      console.log('Error loading tokens from database:', err.message);
-    });
-
     console.log('Loading tokens from database...');
     await db.loadAllTokens();
     
     // Log token status (first few characters only for security)
     if (process.env.TWITCH_USER_TOKEN) {
       console.log(`TWITCH_USER_TOKEN is available: ${process.env.TWITCH_USER_TOKEN.substring(0, 5)}...`);
+      
+      // Update the client password with the loaded token
+      twitchClient.opts.identity.password = process.env.TWITCH_USER_TOKEN.startsWith('oauth:') 
+        ? process.env.TWITCH_USER_TOKEN 
+        : `oauth:${process.env.TWITCH_USER_TOKEN}`;
     } else {
       console.log('TWITCH_USER_TOKEN is not available');
     }
     
     // Connect to Twitch chat with error handling
-    twitchClient.connect().catch(err => {
-      console.log('Failed to connect to Twitch chat:', err);
-      console.log('Please make sure your TWITCH_ACCESS_TOKEN is valid');
-    });
+    if (process.env.TWITCH_USER_TOKEN) {
+      twitchClient.connect().catch(err => {
+        console.log('Failed to connect to Twitch chat:', err);
+        console.log('Please make sure your token is valid for chat access');
+      });
+    } else {
+      console.log('Skipping Twitch chat connection - no token available');
+    }
     
     // Connect to Discord if token is provided
     if (process.env.DISCORD_BOT_TOKEN) {

@@ -10,22 +10,28 @@ const dbPath = process.env.NODE_ENV === 'production'
   ? path.join('/tmp', 'tokens.db')
   : path.join(__dirname, 'tokens.db');
 
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error opening database:', err.message);
-  } else {
-    console.log('Connected to the tokens database');
-    
-    // Create the tokens table if it doesn't exist
-    db.run(`
-      CREATE TABLE IF NOT EXISTS tokens (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
-    `);
-  }
-});
+  const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      console.error('Error opening database:', err.message);
+    } else {
+      console.log('Connected to the tokens database');
+      
+      // Create the tokens table if it doesn't exist
+      db.run(`
+        CREATE TABLE IF NOT EXISTS tokens (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      `, (tableErr) => {
+        if (tableErr) {
+          console.error('Error creating tokens table:', tableErr.message);
+        } else {
+          console.log('Tokens table verified/created successfully');
+        }
+      });
+    }
+  });
 
 // Save a token to the database
 function saveToken(key, value) {
