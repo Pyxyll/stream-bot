@@ -413,4 +413,61 @@ async function refreshUserToken() {
   }
 }
 
+outer.get('/auth/chat-token', (req, res) => {
+  const clientId = process.env.TWITCH_CLIENT_ID;
+  const redirectUri = `${process.env.PUBLIC_URL}/auth/chat-callback`;
+  const responseType = 'code';
+  
+  // Only request chat scopes
+  const chatScopes = 'chat:read chat:edit';
+  
+  const authUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=${responseType}&scope=${encodeURIComponent(chatScopes)}&force_verify=true`;
+  
+  res.redirect(authUrl);
+});
+
+// Callback for chat token
+router.get('/auth/chat-callback', async (req, res) => {
+  const { code } = req.query;
+  
+  if (!code) {
+    return res.status(400).send('No authorization code provided');
+  }
+  
+  try {
+    // Exchange code for token
+    const tokenResponse = await axios.post('https://id.twitch.tv/oauth2/token', null, {
+      params: {
+        client_id: process.env.TWITCH_CLIENT_ID,
+        client_secret: process.env.TWITCH_CLIENT_SECRET,
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: `${process.env.PUBLIC_URL}/auth/chat-callback`
+      }
+    });
+    
+    const { access_token } = tokenResponse.data;
+    
+    // Save to database
+    await db.saveToken('TWITCH_CHAT_TOKEN', access_token);
+    
+    // Set in environment
+    process.env.TWITCH_CHAT_TOKEN = access_token;
+    
+    // Try to connect to chat immediately
+    if (global.connectChat) {
+      global.connectChat(access_token);
+    }
+    
+    res.send(`
+      <h1>Chat Authentication Successful!</h1>
+      <p>Your chat token has been saved. The bot should now be able to connect to chat.</p>
+      <p><a href="/">Return to Dashboard</a></p>
+    `);
+  } catch (error) {
+    console.error('Error getting chat token:', error);
+    res.status(500).send(`Error: ${error.message}`);
+  }
+});
+
 module.exports = { router, setupFollowSubscription, refreshUserToken };

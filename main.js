@@ -450,5 +450,25 @@ app.get('/eventsub-status', async (req, res) => {
   }
 });
 
+global.connectChat = (token) => {
+  if (!token) {
+    console.log('No token provided for chat connection');
+    return;
+  }
+  
+  const client = setupTwitchClient(token);
+  
+  if (client) {
+    client.connect()
+      .then(() => {
+        console.log('Successfully connected to Twitch chat!');
+        global.twitchClient = client;
+      })
+      .catch(err => {
+        console.log('Failed to connect to Twitch chat:', err);
+      });
+  }
+};
+
 // Start the server
 startServer();
