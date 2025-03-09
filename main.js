@@ -55,6 +55,16 @@ async function startServer() {
     await db.loadAllTokens().catch(err => {
       console.log('Error loading tokens from database:', err.message);
     });
+
+    console.log('Loading tokens from database...');
+    await db.loadAllTokens();
+    
+    // Log token status (first few characters only for security)
+    if (process.env.TWITCH_USER_TOKEN) {
+      console.log(`TWITCH_USER_TOKEN is available: ${process.env.TWITCH_USER_TOKEN.substring(0, 5)}...`);
+    } else {
+      console.log('TWITCH_USER_TOKEN is not available');
+    }
     
     // Connect to Twitch chat with error handling
     twitchClient.connect().catch(err => {
