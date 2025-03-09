@@ -139,7 +139,7 @@ function handleCommand(channel, tags, command, args) {
 async function checkStreamStatus() {
   try {
     // Make sure we have the required tokens
-    if (!process.env.TWITCH_ACCESS_TOKEN || !process.env.TWITCH_CLIENT_ID) {
+    if (!process.env.TWITCH_USER_TOKEN || !process.env.TWITCH_CLIENT_ID) {
       console.log('Missing Twitch credentials. Stream status check skipped.');
       return;
     }
@@ -147,7 +147,7 @@ async function checkStreamStatus() {
     const response = await axios.get(`https://api.twitch.tv/helix/streams?user_login=${process.env.TWITCH_CHANNEL}`, {
       headers: {
         'Client-ID': process.env.TWITCH_CLIENT_ID,
-        'Authorization': `Bearer ${process.env.TWITCH_ACCESS_TOKEN}`
+        'Authorization': `Bearer ${process.env.TWITCH_USER_TOKEN}` // Use USER_TOKEN instead of ACCESS_TOKEN
       }
     });
     
