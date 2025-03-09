@@ -1,10 +1,9 @@
-// user-auth.js - User OAuth implementation for follow events
-
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const router = express.Router();
+const db = require('./db'); // Import the database module
 
 // Define the scopes needed for follow events
 const TWITCH_USER_SCOPES = [
@@ -68,76 +67,104 @@ router.get('/auth/twitch/callback', async (req, res) => {
     
     const userData = userResponse.data.data[0];
     
-    // Store tokens in .env file (for development only - use a proper database for production)
-    const envPath = path.resolve(process.cwd(), '.env');
+    // Store tokens in process.env for immediate use
+    process.env.TWITCH_USER_TOKEN = access_token;
+    process.env.TWITCH_USER_REFRESH_TOKEN = refresh_token;
+    
+    // Save tokens to persistent storage
+    let tokensStoredSuccessfully = false;
     
     try {
-      let envContent = fs.readFileSync(envPath, 'utf8');
+      // Save to database
+      await db.saveToken('TWITCH_USER_TOKEN', access_token);
+      await db.saveToken('TWITCH_USER_REFRESH_TOKEN', refresh_token);
+      tokensStoredSuccessfully = true;
+      console.log('Tokens saved to database successfully');
       
-      // Update environment variables in the file
-      if (envContent.includes('TWITCH_USER_TOKEN=')) {
-        envContent = envContent.replace(/TWITCH_USER_TOKEN=.*/g, `TWITCH_USER_TOKEN=${access_token}`);
-      } else {
-        envContent += `\nTWITCH_USER_TOKEN=${access_token}`;
-      }
-      
-      if (envContent.includes('TWITCH_USER_REFRESH_TOKEN=')) {
-        envContent = envContent.replace(/TWITCH_USER_REFRESH_TOKEN=.*/g, `TWITCH_USER_REFRESH_TOKEN=${refresh_token}`);
-      } else {
-        envContent += `\nTWITCH_USER_REFRESH_TOKEN=${refresh_token}`;
-      }
-      
-      fs.writeFileSync(envPath, envContent);
-      
-      // Set the tokens directly in process.env
-      process.env.TWITCH_USER_TOKEN = access_token;
-      process.env.TWITCH_USER_REFRESH_TOKEN = refresh_token;
-      
-      // Set up follow subscription
-      const result = await setupFollowSubscription(userData.id);
-      
-      if (result.success) {
-        res.send(`
-          <h1>Authentication Successful!</h1>
-          <p>Authenticated as: ${userData.display_name}</p>
-          <p>Follow events have been set up successfully!</p>
-          <p><a href="/">Return to dashboard</a></p>
-        `);
-      } else {
-        res.send(`
-          <h1>Authentication Successful!</h1>
-          <p>Authenticated as: ${userData.display_name}</p>
-          <p>Token saved, but there was an error setting up follow events:</p>
-          <p>${result.message || JSON.stringify(result.error)}</p>
-          <p><a href="/">Return to dashboard</a></p>
-        `);
+      // Also try to save to .env file if in development
+      if (process.env.NODE_ENV === 'development') {
+        const envPath = path.resolve(process.cwd(), '.env');
+        let envContent = fs.readFileSync(envPath, 'utf8');
+        
+        if (envContent.includes('TWITCH_USER_TOKEN=')) {
+          envContent = envContent.replace(/TWITCH_USER_TOKEN=.*/g, `TWITCH_USER_TOKEN=${access_token}`);
+        } else {
+          envContent += `\nTWITCH_USER_TOKEN=${access_token}`;
+        }
+        
+        if (envContent.includes('TWITCH_USER_REFRESH_TOKEN=')) {
+          envContent = envContent.replace(/TWITCH_USER_REFRESH_TOKEN=.*/g, `TWITCH_USER_REFRESH_TOKEN=${refresh_token}`);
+        } else {
+          envContent += `\nTWITCH_USER_REFRESH_TOKEN=${refresh_token}`;
+        }
+        
+        fs.writeFileSync(envPath, envContent);
+        console.log('Tokens also saved to .env file');
       }
     } catch (error) {
-      console.error('Error updating .env file:', error);
-      
-      // Set the tokens directly in process.env even if file save fails
-      process.env.TWITCH_USER_TOKEN = access_token;
-      process.env.TWITCH_USER_REFRESH_TOKEN = refresh_token;
-      
-      const result = await setupFollowSubscription(userData.id);
-      
-      if (result.success) {
-        res.send(`
-          <h1>Authentication Successful!</h1>
-          <p>Authenticated as: ${userData.display_name}</p>
-          <p>Follow events have been set up successfully!</p>
-          <p>Note: Could not save token to .env file.</p>
-          <p><a href="/">Return to dashboard</a></p>
-        `);
-      } else {
-        res.send(`
-          <h1>Authentication Successful!</h1>
-          <p>Authenticated as: ${userData.display_name}</p>
-          <p>Token saved in memory, but there was an error setting up follow events:</p>
-          <p>${result.message || JSON.stringify(result.error)}</p>
-          <p><a href="/">Return to dashboard</a></p>
-        `);
-      }
+      console.error('Error saving tokens to persistent storage:', error);
+    }
+    
+    // Set up follow subscription
+    const result = await setupFollowSubscription(userData.id);
+    
+    if (result.success) {
+      res.send(`
+        <h1>Authentication Successful!</h1>
+        <p>Authenticated as: ${userData.display_name}</p>
+        <p>Follow events have been set up successfully!</p>
+        
+        ${!tokensStoredSuccessfully ? `
+        <div style="margin: 20px 0; padding: 15px; background: #fff8e8; border-left: 4px solid #ffcc00;">
+          <strong>Note:</strong> Your tokens could not be saved to persistent storage.
+          If the server restarts, you may need to re-authenticate.
+        </div>
+        ` : `
+        <div style="margin: 20px 0; padding: 15px; background: #e8ffe8; border-left: 4px solid green;">
+          <strong>Success:</strong> Your tokens have been saved to persistent storage.
+          They will be automatically loaded when the server restarts.
+        </div>
+        `}
+        
+        <p><a href="/" style="
+          display: inline-block;
+          background: #6441A4;
+          color: white;
+          padding: 10px 15px;
+          text-decoration: none;
+          border-radius: 4px;
+          font-weight: bold;
+        ">Return to Dashboard</a></p>
+      `);
+    } else {
+      res.send(`
+        <h1>Authentication Partially Successful</h1>
+        <p>Authenticated as: ${userData.display_name}</p>
+        <p>Token saved, but there was an error setting up follow events:</p>
+        <p>${result.message || JSON.stringify(result.error)}</p>
+        
+        ${!tokensStoredSuccessfully ? `
+        <div style="margin: 20px 0; padding: 15px; background: #fff8e8; border-left: 4px solid #ffcc00;">
+          <strong>Note:</strong> Your tokens could not be saved to persistent storage.
+          If the server restarts, you may need to re-authenticate.
+        </div>
+        ` : `
+        <div style="margin: 20px 0; padding: 15px; background: #e8ffe8; border-left: 4px solid green;">
+          <strong>Success:</strong> Your tokens have been saved to persistent storage.
+          They will be automatically loaded when the server restarts.
+        </div>
+        `}
+        
+        <p><a href="/" style="
+          display: inline-block;
+          background: #6441A4;
+          color: white;
+          padding: 10px 15px;
+          text-decoration: none;
+          border-radius: 4px;
+          font-weight: bold;
+        ">Return to Dashboard</a></p>
+      `);
     }
   } catch (error) {
     console.error('Error during OAuth callback:', error);
@@ -272,15 +299,30 @@ async function setupFollowSubscription(userId) {
   }
 }
 
-// Route to check token status (simplified version)
-router.get('/auth/token-status', (req, res) => {
+// Route to check token status
+router.get('/auth/token-status', async (req, res) => {
   const userToken = process.env.TWITCH_USER_TOKEN;
   
-  let tokenStatus = userToken ? 'Available' : 'Not available';
+  // Try to get token from database if not in memory
+  let dbToken = null;
+  if (!userToken) {
+    try {
+      dbToken = await db.getToken('TWITCH_USER_TOKEN');
+      if (dbToken) {
+        // If found in DB but not in memory, load it into memory
+        process.env.TWITCH_USER_TOKEN = dbToken;
+      }
+    } catch (err) {
+      console.error('Error retrieving token from database:', err);
+    }
+  }
+  
+  const tokenStatus = userToken || dbToken ? 'Available' : 'Not available';
+  const tokenSource = userToken ? 'memory' : (dbToken ? 'database' : 'none');
   
   res.send(`
     <h1>Twitch Authorization Status</h1>
-    <p>User Token: ${tokenStatus}</p>
+    <p>User Token: ${tokenStatus} (from ${tokenSource})</p>
     
     <p><a href="/auth/user-token" style="
       display: inline-block;
@@ -301,4 +343,49 @@ router.get('/auth/token-status', (req, res) => {
   `);
 });
 
-module.exports = { router, setupFollowSubscription };
+// Helper function to refresh tokens when needed
+async function refreshUserToken() {
+  const refreshToken = process.env.TWITCH_USER_REFRESH_TOKEN;
+  
+  if (!refreshToken) {
+    console.log('No refresh token available');
+    return null;
+  }
+  
+  try {
+    const response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
+      params: {
+        client_id: process.env.TWITCH_CLIENT_ID,
+        client_secret: process.env.TWITCH_CLIENT_SECRET,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token'
+      }
+    });
+    
+    const { access_token, refresh_token } = response.data;
+    
+    // Update tokens in memory
+    process.env.TWITCH_USER_TOKEN = access_token;
+    if (refresh_token) {
+      process.env.TWITCH_USER_REFRESH_TOKEN = refresh_token;
+    }
+    
+    // Save to database
+    try {
+      await db.saveToken('TWITCH_USER_TOKEN', access_token);
+      if (refresh_token) {
+        await db.saveToken('TWITCH_USER_REFRESH_TOKEN', refresh_token);
+      }
+      console.log('Refreshed tokens saved to database');
+    } catch (error) {
+      console.error('Error saving refreshed tokens to database:', error);
+    }
+    
+    return access_token;
+  } catch (error) {
+    console.error('Error refreshing token:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+module.exports = { router, setupFollowSubscription, refreshUserToken };

@@ -7,6 +7,7 @@ const socketIo = require('socket.io');
 const tmi = require('tmi.js'); // Twitch chat client
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const axios = require('axios');
+const db = require('./db');
 require('dotenv').config(); // For environment variables
 
 // Import custom modules
@@ -48,19 +49,40 @@ const discordClient = new Client({
   ] 
 });
 
-// Connect to Twitch chat with error handling
-twitchClient.connect().catch(err => {
-  console.log('Failed to connect to Twitch chat:', err);
-  console.log('Please make sure your TWITCH_ACCESS_TOKEN is valid');
-});
-
-// Connect to Discord if token is provided
-if (process.env.DISCORD_BOT_TOKEN) {
-  discordClient.login(process.env.DISCORD_BOT_TOKEN)
-    .catch(err => {
-      console.log('Failed to connect to Discord:', err);
-      console.log('Please make sure your DISCORD_BOT_TOKEN is valid');
+async function startServer() {
+  try {
+    // Load tokens from database
+    await db.loadAllTokens().catch(err => {
+      console.log('Error loading tokens from database:', err.message);
     });
+    
+    // Connect to Twitch chat with error handling
+    twitchClient.connect().catch(err => {
+      console.log('Failed to connect to Twitch chat:', err);
+      console.log('Please make sure your TWITCH_ACCESS_TOKEN is valid');
+    });
+    
+    // Connect to Discord if token is provided
+    if (process.env.DISCORD_BOT_TOKEN) {
+      discordClient.login(process.env.DISCORD_BOT_TOKEN)
+        .catch(err => {
+          console.log('Failed to connect to Discord:', err);
+          console.log('Please make sure your DISCORD_BOT_TOKEN is valid');
+        });
+    }
+    
+    // Start the server
+    const PORT = process.env.PORT || 3000;
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`-----------------------------------------`);
+      console.log(`Open http://localhost:${PORT} in your browser to access the dashboard`);
+      console.log(`-----------------------------------------`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
 }
 
 // When Discord client is ready
@@ -401,10 +423,4 @@ app.get('/eventsub-status', async (req, res) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`-----------------------------------------`);
-  console.log(`Open http://localhost:${PORT} in your browser to access the dashboard`);
-  console.log(`-----------------------------------------`);
-});
+startServer();
