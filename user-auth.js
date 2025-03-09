@@ -413,7 +413,7 @@ async function refreshUserToken() {
   }
 }
 
-outer.get('/auth/chat-token', (req, res) => {
+router.get('/auth/chat-token', (req, res) => {
   const clientId = process.env.TWITCH_CLIENT_ID;
   const redirectUri = `${process.env.PUBLIC_URL}/auth/chat-callback`;
   const responseType = 'code';
