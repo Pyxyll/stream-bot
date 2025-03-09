@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twitch Stream Bot</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #6441A4;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+      background: #f9f9f9;
+    }
+    .buttons {
+      display: flex;
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .button {
+      display: inline-block;
+      background: #6441A4;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    .button.secondary {
+      background: #444;
+    }
+    .status {
+      margin-top: 30px;
+    }
+    .status-item {
+      padding: 10px;
+      margin: 5px 0;
+      border-left: 4px solid #ddd;
+    }
+    .status-item.connected {
+      border-color: green;
+      background: #e8ffe8;
+    }
+    .status-item.disconnected {
+      border-color: red;
+      background: #ffe8e8;
+    }
+    .tip {
+      background: #ffffdd;
+      padding: 10px;
+      border-left: 4px solid #ffcc00;
+      margin: 15px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Twitch Stream Bot Dashboard</h1>
+  
+  <div class="card">
+    <h2>Authentication</h2>
+    <p>Connect your bot to Twitch chat and APIs:</p>
+    
+    <div class="buttons">
+      <a href="/auth/user-token" class="button">Authorize with Twitch</a>
+      <a href="/auth/token-status" class="button secondary">Check Authorization Status</a>
+    </div>
+  </div>
+  
+  <div class="card">
+    <h2>Browser Sources</h2>
+    <p>Use these links in OBS as browser sources:</p>
+    <ul>
+      <li><a href="/alerts.html" target="_blank">Alerts</a> - For follows, subscriptions, etc.</li>
+    </ul>
+    <div class="tip">
+      <strong>Tip:</strong> Add this as a Browser Source in OBS with width: 1280px, height: 720px
+    </div>
+  </div>
+  
+  <div class="card">
+    <h2>Testing Tools</h2>
+    <p>Use these tools to test your stream features:</p>
+    <div class="buttons">
+      <a href="/test-events.html" class="button">Test Stream Events</a>
+    </div>
+  </div>
+  
+  <div class="card">
+    <h2>Discord Integration</h2>
+    <p>Set up Discord notifications when you go live:</p>
+    <div class="buttons">
+      <a href="/test/discord-live" class="button">Test Discord Notification</a>
+    </div>
+  </div>
+  
+  <div class="status">
+    <h2>Connection Status</h2>
+    <div id="twitch-status" class="status-item disconnected">
+      Twitch Chat: Disconnected
+    </div>
+    <div id="discord-status" class="status-item disconnected">
+      Discord: Disconnected
+    </div>
+  </div>
+
+  <script>
+    // Periodically check connection status
+    function checkStatus() {
+      fetch('/status')
+        .then(response => response.json())
+        .then(data => {
+          if (data.twitch) {
+            document.getElementById('twitch-status').className = 'status-item connected';
+            document.getElementById('twitch-status').textContent = 'Twitch Chat: Connected';
+          }
+          if (data.discord) {
+            document.getElementById('discord-status').className = 'status-item connected';
+            document.getElementById('discord-status').textContent = 'Discord: Connected';
+          }
+        })
+        .catch(err => {
+          console.error('Error checking status:', err);
+        });
+    }
+    
+    // Check status when page loads and then every 10 seconds
+    checkStatus();
+    setInterval(checkStatus, 10000);
+  </script>
+</body>
+</html>
