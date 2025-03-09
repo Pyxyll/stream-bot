@@ -30,18 +30,29 @@ app.use(userAuth.router);
 app.use(eventSub.router);
 
 // Initialize Twitch client
-const twitchClient = new tmi.Client({
-  options: { debug: true },
-  identity: {
-    username: process.env.TWITCH_BOT_USERNAME,
-    password: process.env.TWITCH_USER_TOKEN 
-      ? (process.env.TWITCH_USER_TOKEN.startsWith('oauth:') 
-          ? process.env.TWITCH_USER_TOKEN 
-          : `oauth:${process.env.TWITCH_USER_TOKEN}`)
-      : 'oauth:placeholder' // Will be replaced when token is loaded
-  },
-  channels: [process.env.TWITCH_CHANNEL]
-});
+function setupTwitchClient() {
+  // Get the token (prefer user token, fall back to access token)
+  const token = process.env.TWITCH_USER_TOKEN || process.env.TWITCH_ACCESS_TOKEN;
+  
+  if (!token) {
+    console.log('No token available for Twitch chat');
+    return null;
+  }
+  
+  // Format the token correctly (add oauth: prefix if needed)
+  const formattedToken = token.startsWith('oauth:') ? token : `oauth:${token}`;
+  
+  return new tmi.Client({
+    options: { debug: true },
+    identity: {
+      username: process.env.TWITCH_BOT_USERNAME || process.env.TWITCH_CHANNEL,
+      password: formattedToken
+    },
+    channels: [process.env.TWITCH_CHANNEL]
+  });
+}
+
+const twitchClient = setupTwitchClient();
 
 // Initialize Discord client
 const discordClient = new Client({ 
@@ -63,22 +74,21 @@ async function startServer() {
     if (process.env.TWITCH_USER_TOKEN) {
       console.log(`TWITCH_USER_TOKEN is available: ${process.env.TWITCH_USER_TOKEN.substring(0, 5)}...`);
       
-      // Update the client password with the loaded token
-      twitchClient.opts.identity.password = process.env.TWITCH_USER_TOKEN.startsWith('oauth:') 
-        ? process.env.TWITCH_USER_TOKEN 
-        : `oauth:${process.env.TWITCH_USER_TOKEN}`;
+      // Recreate the Twitch client with the loaded token
+      const newClient = setupTwitchClient();
+      
+      if (newClient) {
+        // Connect to Twitch chat with error handling
+        newClient.connect().catch(err => {
+          console.log('Failed to connect to Twitch chat:', err);
+          console.log('Please make sure your token has chat:read and chat:edit scopes');
+        });
+        
+        // Replace the old client with the new one
+        Object.assign(twitchClient, newClient);
+      }
     } else {
       console.log('TWITCH_USER_TOKEN is not available');
-    }
-    
-    // Connect to Twitch chat with error handling
-    if (process.env.TWITCH_USER_TOKEN) {
-      twitchClient.connect().catch(err => {
-        console.log('Failed to connect to Twitch chat:', err);
-        console.log('Please make sure your token is valid for chat access');
-      });
-    } else {
-      console.log('Skipping Twitch chat connection - no token available');
     }
     
     // Connect to Discord if token is provided

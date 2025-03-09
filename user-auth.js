@@ -8,10 +8,13 @@ const db = require('./db'); // Import the database module
 // Define the scopes needed for follow events
 const TWITCH_USER_SCOPES = [
   'moderator:read:followers',
-  'channel:read:subscriptions'
+  'channel:read:subscriptions',
+  'chat:read',
+  'chat:edit'
 ].join(' ');
 
 // Route to initiate OAuth flow for user token
+// In your user-auth.js file, add this to the auth endpoint
 router.get('/auth/user-token', (req, res) => {
   const clientId = process.env.TWITCH_CLIENT_ID;
   const redirectUri = `${process.env.PUBLIC_URL}/auth/twitch/callback`;
@@ -19,7 +22,29 @@ router.get('/auth/user-token', (req, res) => {
   
   const authUrl = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=${responseType}&scope=${encodeURIComponent(TWITCH_USER_SCOPES)}&force_verify=true`;
   
-  res.redirect(authUrl);
+  // Show a page explaining what permissions are being requested
+  res.send(`
+    <h1>Twitch Authorization Required</h1>
+    <p>The bot needs the following permissions:</p>
+    <ul>
+      <li><strong>moderator:read:followers</strong> - For follow event notifications</li>
+      <li><strong>channel:read:subscriptions</strong> - For subscription data</li>
+      <li><strong>chat:read</strong> - To read messages in your chat</li>
+      <li><strong>chat:edit</strong> - To send messages as your bot</li>
+    </ul>
+    <p>Please make sure to accept ALL requested permissions on the next screen.</p>
+    <p>
+      <a href="${authUrl}" style="
+        display: inline-block;
+        background: #6441A4;
+        color: white;
+        padding: 10px 20px;
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: bold;
+      ">Continue to Twitch Authorization</a>
+    </p>
+  `);
 });
 
 // OAuth callback route
