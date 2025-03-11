@@ -1,158 +1,202 @@
-// db.js - Updated with promise-based initialization
+// db.js - MongoDB Database Integration
 
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const mongoose = require('mongoose');
+const crypto = require('crypto');
 
-// Create a tokens database in the /tmp directory (writable on most cloud platforms)
-const dbPath = process.env.NODE_ENV === 'production' 
-  ? path.join('/tmp', 'tokens.db')
-  : path.join(__dirname, 'tokens.db');
+// Connect to MongoDB
+async function connectToDatabase() {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true
+    });
+    console.log('Connected to MongoDB');
+    return true;
+  } catch (error) {
+    console.error('MongoDB connection error:', error);
+    return false;
+  }
+}
 
-// Initialize database with a promise so we can await it
-function initializeDatabase() {
-  return new Promise((resolve, reject) => {
-    const db = new sqlite3.Database(dbPath, (err) => {
-      if (err) {
-        console.error('Error opening database:', err.message);
-        reject(err);
-        return;
+// Define Token schema
+const TokenSchema = new mongoose.Schema({
+  name: { type: String, unique: true, required: true },
+  value: { type: String, required: true },
+  encrypted: { type: Boolean, default: false },
+  updated_at: { type: Date, default: Date.now }
+});
+
+// Define Token model
+const Token = mongoose.model('Token', TokenSchema);
+
+// Helper function to encrypt sensitive data
+function encrypt(text) {
+  if (!process.env.ENCRYPTION_KEY) {
+    return text; // No encryption if key not provided
+  }
+  
+  try {
+    const iv = crypto.randomBytes(16);
+    const key = crypto.createHash('sha256').update(process.env.ENCRYPTION_KEY).digest('base64').substr(0, 32);
+    const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(key), iv);
+    
+    let encrypted = cipher.update(text);
+    encrypted = Buffer.concat([encrypted, cipher.final()]);
+    
+    return iv.toString('hex') + ':' + encrypted.toString('hex');
+  } catch (error) {
+    console.error('Encryption error:', error);
+    return text;
+  }
+}
+
+// Helper function to decrypt sensitive data
+function decrypt(text) {
+  if (!process.env.ENCRYPTION_KEY || !text.includes(':')) {
+    return text; // No decryption if key not provided or text not encrypted
+  }
+  
+  try {
+    const textParts = text.split(':');
+    const iv = Buffer.from(textParts[0], 'hex');
+    const encryptedText = Buffer.from(textParts[1], 'hex');
+    const key = crypto.createHash('sha256').update(process.env.ENCRYPTION_KEY).digest('base64').substr(0, 32);
+    const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(key), iv);
+    
+    let decrypted = decipher.update(encryptedText);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+    
+    return decrypted.toString();
+  } catch (error) {
+    console.error('Decryption error:', error);
+    return text;
+  }
+}
+
+// Store a token in the database
+async function storeToken(name, value, shouldEncrypt = true) {
+  try {
+    const storedValue = shouldEncrypt ? encrypt(value) : value;
+    
+    const result = await Token.findOneAndUpdate(
+      { name },
+      { 
+        value: storedValue, 
+        encrypted: shouldEncrypt,
+        updated_at: new Date() 
+      },
+      { upsert: true, new: true }
+    );
+    
+    console.log(`Token ${name} stored successfully`);
+    return true;
+  } catch (error) {
+    console.error(`Error storing token ${name}:`, error);
+    return false;
+  }
+}
+
+// Retrieve a token from the database
+async function getToken(name) {
+  try {
+    const token = await Token.findOne({ name });
+    
+    if (!token) {
+      return null;
+    }
+    
+    return token.encrypted ? decrypt(token.value) : token.value;
+  } catch (error) {
+    console.error(`Error retrieving token ${name}:`, error);
+    return null;
+  }
+}
+
+// Update multiple tokens at once
+async function updateTokens(tokenData) {
+  try {
+    const operations = [];
+    
+    for (const [name, value] of Object.entries(tokenData)) {
+      if (value) {
+        operations.push({
+          updateOne: {
+            filter: { name },
+            update: { 
+              value: encrypt(value), 
+              encrypted: true,
+              updated_at: new Date() 
+            },
+            upsert: true
+          }
+        });
       }
-      
-      console.log('Connected to the tokens database');
-      
-      // Create the tokens table if it doesn't exist
-      db.run(`
-        CREATE TABLE IF NOT EXISTS tokens (
-          key TEXT PRIMARY KEY,
-          value TEXT NOT NULL,
-          updated_at INTEGER NOT NULL
-        )
-      `, (tableErr) => {
-        if (tableErr) {
-          console.error('Error creating tokens table:', tableErr.message);
-          reject(tableErr);
-        } else {
-          console.log('Tokens table verified/created successfully');
-          resolve(db);
-        }
-      });
-    });
-  });
+    }
+    
+    if (operations.length > 0) {
+      await Token.bulkWrite(operations);
+      console.log(`Updated ${operations.length} tokens`);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error updating tokens:', error);
+    return false;
+  }
 }
 
-// Create the database instance
-let db;
-let dbInitialized = false;
-let dbInitializing = false;
-let dbPromise = null;
+// Get all stored tokens (for diagnostics)
+async function getAllTokens() {
+  try {
+    const tokens = await Token.find({}, { name: 1, updated_at: 1, encrypted: 1 });
+    return tokens.map(token => ({
+      name: token.name,
+      encrypted: token.encrypted,
+      updated_at: token.updated_at
+    }));
+  } catch (error) {
+    console.error('Error getting all tokens:', error);
+    return [];
+  }
+}
 
-// Ensure database is initialized before any operations
-async function ensureDbInitialized() {
-  if (dbInitialized) {
-    return db;
+// Delete a token
+async function deleteToken(name) {
+  try {
+    await Token.deleteOne({ name });
+    console.log(`Token ${name} deleted successfully`);
+    return true;
+  } catch (error) {
+    console.error(`Error deleting token ${name}:`, error);
+    return false;
+  }
+}
+
+// Initialize database with important tokens from environment variables
+async function initializeFromEnv() {
+  const tokenNames = [
+    'TWITCH_ACCESS_TOKEN',
+    'TWITCH_REFRESH_TOKEN',
+    'TWITCH_USER_TOKEN',
+    'TWITCH_USER_REFRESH_TOKEN',
+    'TWITCH_APP_ACCESS_TOKEN'
+  ];
+  
+  for (const name of tokenNames) {
+    if (process.env[name]) {
+      await storeToken(name, process.env[name], true);
+    }
   }
   
-  if (!dbInitializing) {
-    dbInitializing = true;
-    dbPromise = initializeDatabase();
-  }
-  
-  db = await dbPromise;
-  dbInitialized = true;
-  return db;
-}
-
-// Save a token to the database
-async function saveToken(key, value) {
-  try {
-    await ensureDbInitialized();
-    
-    return new Promise((resolve, reject) => {
-      const stmt = db.prepare('INSERT OR REPLACE INTO tokens VALUES (?, ?, ?)');
-      stmt.run(key, value, Date.now(), function(err) {
-        if (err) {
-          console.error('Error saving token:', err.message);
-          reject(err);
-        } else {
-          console.log(`Token ${key} saved successfully`);
-          resolve(this.lastID);
-        }
-      });
-      stmt.finalize();
-    });
-  } catch (err) {
-    console.error('Error ensuring database before saving token:', err);
-    throw err;
-  }
-}
-
-// Get a token from the database
-async function getToken(key) {
-  try {
-    await ensureDbInitialized();
-    
-    return new Promise((resolve, reject) => {
-      db.get('SELECT value FROM tokens WHERE key = ?', [key], (err, row) => {
-        if (err) {
-          console.error('Error getting token:', err.message);
-          reject(err);
-        } else {
-          resolve(row ? row.value : null);
-        }
-      });
-    });
-  } catch (err) {
-    console.error('Error ensuring database before getting token:', err);
-    throw err;
-  }
-}
-
-// Load all tokens into process.env
-async function loadAllTokens() {
-  try {
-    await ensureDbInitialized();
-    
-    return new Promise((resolve, reject) => {
-      db.all('SELECT key, value FROM tokens', [], (err, rows) => {
-        if (err) {
-          console.error('Error loading tokens:', err);
-          reject(err);
-        } else {
-          rows.forEach(row => {
-            process.env[row.key] = row.value;
-          });
-          console.log(`Loaded ${rows.length} tokens from database`);
-          resolve(rows.length);
-        }
-      });
-    });
-  } catch (err) {
-    console.error('Error ensuring database before loading tokens:', err);
-    throw err;
-  }
-}
-
-// Close the database connection
-async function close() {
-  if (!db) return Promise.resolve();
-  
-  return new Promise((resolve, reject) => {
-    db.close(err => {
-      if (err) {
-        console.error('Error closing database:', err.message);
-        reject(err);
-      } else {
-        console.log('Database connection closed');
-        dbInitialized = false;
-        resolve();
-      }
-    });
-  });
+  console.log('Initialized tokens from environment variables');
 }
 
 module.exports = {
-  saveToken,
+  connectToDatabase,
+  storeToken,
   getToken,
-  loadAllTokens,
-  close
+  updateTokens,
+  getAllTokens,
+  deleteToken,
+  initializeFromEnv
 };

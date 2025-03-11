@@ -1,10 +1,9 @@
-// auth.js - OAuth implementation for regular access tokens
+// auth.js - OAuth implementation for regular access tokens (with MongoDB)
 
 const express = require('express');
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
 const router = express.Router();
+const db = require('./db'); // Import database functions
 
 // Scopes needed for your bot
 const TWITCH_SCOPES = [
@@ -65,24 +64,19 @@ router.get('/auth/twitch/callback', async (req, res) => {
     
     const userData = userResponse.data.data[0];
     
-    // Store tokens in .env file (for development only - use a proper database for production)
-    const envPath = path.resolve(process.cwd(), '.env');
-    let envContent = fs.readFileSync(envPath, 'utf8');
+    // Store tokens in MongoDB instead of .env file
+    await db.storeToken('TWITCH_ACCESS_TOKEN', access_token);
+    await db.storeToken('TWITCH_REFRESH_TOKEN', refresh_token);
     
-    // Update environment variables
-    envContent = envContent.replace(/TWITCH_ACCESS_TOKEN=.*/g, `TWITCH_ACCESS_TOKEN=${access_token}`);
-    envContent = envContent.replace(/TWITCH_REFRESH_TOKEN=.*/g, `TWITCH_REFRESH_TOKEN=${refresh_token}`);
-    
-    fs.writeFileSync(envPath, envContent);
-    
-    // Reload environment variables
-    require('dotenv').config();
+    // Also update local process.env for current session
+    process.env.TWITCH_ACCESS_TOKEN = access_token;
+    process.env.TWITCH_REFRESH_TOKEN = refresh_token;
     
     res.send(`
       <h1>Authentication Successful!</h1>
       <p>Authenticated as: ${userData.display_name}</p>
-      <p>Your access token has been saved.</p>
-      <p>Please restart the application for changes to take effect.</p>
+      <p>Your access token has been saved to the database.</p>
+      <p>The bot will now be able to connect to Twitch chat.</p>
       <p><a href="/">Return to dashboard</a></p>
     `);
   } catch (error) {
@@ -99,7 +93,9 @@ router.get('/auth/twitch/callback', async (req, res) => {
 // Refresh token function - call this periodically to keep tokens valid
 async function refreshTwitchToken() {
   try {
-    if (!process.env.TWITCH_REFRESH_TOKEN) {
+    const refreshToken = await db.getToken('TWITCH_REFRESH_TOKEN');
+    
+    if (!refreshToken) {
       console.log('No refresh token available, skipping token refresh');
       return null;
     }
@@ -108,27 +104,26 @@ async function refreshTwitchToken() {
       params: {
         client_id: process.env.TWITCH_CLIENT_ID,
         client_secret: process.env.TWITCH_CLIENT_SECRET,
-        refresh_token: process.env.TWITCH_REFRESH_TOKEN,
+        refresh_token: refreshToken,
         grant_type: 'refresh_token'
       }
     });
     
     const { access_token, refresh_token } = tokenResponse.data;
     
-    // Update tokens in .env file (for development only)
-    const envPath = path.resolve(process.cwd(), '.env');
-    let envContent = fs.readFileSync(envPath, 'utf8');
-    
-    envContent = envContent.replace(/TWITCH_ACCESS_TOKEN=.*/g, `TWITCH_ACCESS_TOKEN=${access_token}`);
+    // Store tokens in MongoDB
+    await db.storeToken('TWITCH_ACCESS_TOKEN', access_token);
     
     if (refresh_token) {
-      envContent = envContent.replace(/TWITCH_REFRESH_TOKEN=.*/g, `TWITCH_REFRESH_TOKEN=${refresh_token}`);
+      await db.storeToken('TWITCH_REFRESH_TOKEN', refresh_token);
     }
     
-    fs.writeFileSync(envPath, envContent);
+    // Update process.env for current session
+    process.env.TWITCH_ACCESS_TOKEN = access_token;
     
-    // Reload environment variables
-    require('dotenv').config();
+    if (refresh_token) {
+      process.env.TWITCH_REFRESH_TOKEN = refresh_token;
+    }
     
     console.log('Twitch token refreshed successfully');
     return access_token;
@@ -138,10 +133,50 @@ async function refreshTwitchToken() {
   }
 }
 
+// API endpoint to manually trigger token refresh
+router.get('/api/refresh-token', async (req, res) => {
+  try {
+    const result = await refreshTwitchToken();
+    
+    if (result) {
+      res.json({ success: true, message: 'Token refreshed successfully' });
+    } else {
+      res.status(400).json({ 
+        success: false, 
+        message: 'Failed to refresh token. Check if refresh token is available.' 
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error refreshing token', 
+      error: error.message 
+    });
+  }
+});
+
+// Get current token status
+router.get('/api/token-status', async (req, res) => {
+  try {
+    const accessToken = await db.getToken('TWITCH_ACCESS_TOKEN');
+    const refreshToken = await db.getToken('TWITCH_REFRESH_TOKEN');
+    
+    res.json({
+      access_token: accessToken ? 'Available' : 'Not available',
+      refresh_token: refreshToken ? 'Available' : 'Not available',
+      tokens_in_db: await db.getAllTokens()
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error getting token status', 
+      error: error.message 
+    });
+  }
+});
+
 // Set up token refresh every 3 hours (tokens last for 4 hours)
-if (process.env.TWITCH_REFRESH_TOKEN) {
-  setInterval(refreshTwitchToken, 3 * 60 * 60 * 1000);
-  console.log('Token refresh scheduled to run every 3 hours');
-}
+setInterval(refreshTwitchToken, 3 * 60 * 60 * 1000);
+console.log('Token refresh scheduled to run every 3 hours');
 
 module.exports = { router, refreshTwitchToken };

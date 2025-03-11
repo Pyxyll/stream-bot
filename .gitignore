@@ -8,3 +8,4 @@ logs/
 .env
 
 tokens.db
+.qodo
