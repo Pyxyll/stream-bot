@@ -1,10 +1,9 @@
-// user-auth.js - User OAuth implementation for follow events
-
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const router = express.Router();
+const db = require('./db'); // Import the database module
 
 // Define the scopes we need for follow events - update this with the correct scope
 const TWITCH_USER_SCOPES = [
@@ -13,6 +12,7 @@ const TWITCH_USER_SCOPES = [
 ].join(' ');
 
 // Route to initiate OAuth flow for user token
+// In your user-auth.js file, add this to the auth endpoint
 router.get('/auth/user-token', (req, res) => {
   const clientId = process.env.TWITCH_CLIENT_ID;
   const redirectUri = `${process.env.PUBLIC_URL}/auth/twitch/callback`;

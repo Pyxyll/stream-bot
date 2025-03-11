@@ -7,6 +7,7 @@ const socketIo = require('socket.io');
 const tmi = require('tmi.js'); // Twitch chat client
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const axios = require('axios');
+const db = require('./db');
 require('dotenv').config(); // For environment variables
 
 // Import our custom modules
@@ -31,14 +32,28 @@ app.use(eventSub.router);
 eventSub.setIO(io);
 
 // Initialize Twitch client
-const twitchClient = new tmi.Client({
-  options: { debug: true },
-  identity: {
-    username: process.env.TWITCH_BOT_USERNAME,
-    password: `oauth:${process.env.TWITCH_ACCESS_TOKEN}` // Using access token from Twitch OAuth
-  },
-  channels: [process.env.TWITCH_CHANNEL]
-});
+function setupTwitchClient(token) {
+  if (!token) {
+    console.log('No token provided for Twitch chat');
+    return null;
+  }
+  
+  // Remove oauth: prefix if it exists (tmi.js adds it automatically when not present)
+  const cleanToken = token.startsWith('oauth:') ? token.substring(6) : token;
+  
+  console.log(`Setting up Twitch client with token: ${cleanToken.substring(0, 5)}...`);
+  
+  return new tmi.Client({
+    options: { debug: true },
+    identity: {
+      username: process.env.TWITCH_CHANNEL, // Use your channel name
+      password: cleanToken // tmi.js will add oauth: prefix if needed
+    },
+    channels: [process.env.TWITCH_CHANNEL]
+  });
+}
+
+const twitchClient = setupTwitchClient();
 
 // Initialize Discord client
 const discordClient = new Client({ 
