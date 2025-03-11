@@ -6,136 +6,192 @@
   <title>Twitch Stream Bot</title>
   <style>
     body {
-      font-family: Arial, sans-serif;
-      max-width: 800px;
+      font-family: 'Arial', sans-serif;
+      max-width: 900px;
       margin: 0 auto;
       padding: 20px;
       line-height: 1.6;
+      color: #333;
     }
     h1 {
       color: #6441A4;
+      margin-bottom: 20px;
+    }
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
     }
     .card {
       border: 1px solid #ddd;
       border-radius: 8px;
       padding: 20px;
-      margin: 20px 0;
       background: #f9f9f9;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .card h2 {
+      margin-top: 0;
+      color: #6441A4;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 10px;
     }
     .buttons {
       display: flex;
-      gap: 15px;
-      margin: 20px 0;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 15px;
     }
     .button {
       display: inline-block;
       background: #6441A4;
       color: white;
-      padding: 10px 20px;
-      border-radius: 5px;
+      padding: 10px 15px;
+      border-radius: 4px;
       text-decoration: none;
       font-weight: bold;
+      border: none;
+      cursor: pointer;
     }
     .button.secondary {
-      background: #444;
+      background: #555;
+    }
+    .button:hover {
+      opacity: 0.9;
     }
     .status {
-      margin-top: 30px;
+      margin-top: 20px;
     }
     .status-item {
       padding: 10px;
       margin: 5px 0;
-      border-left: 4px solid #ddd;
+      border-radius: 4px;
     }
     .status-item.connected {
-      border-color: green;
       background: #e8ffe8;
+      border-left: 4px solid green;
     }
     .status-item.disconnected {
-      border-color: red;
       background: #ffe8e8;
+      border-left: 4px solid red;
     }
     .tip {
       background: #ffffdd;
       padding: 10px;
       border-left: 4px solid #ffcc00;
-      margin: 15px 0;
+      margin-top: 15px;
+      font-size: 0.9em;
+    }
+    @media (min-width: 768px) {
+      .dashboard {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .full-width {
+        grid-column: 1 / -1;
+      }
     }
   </style>
 </head>
 <body>
   <h1>Twitch Stream Bot Dashboard</h1>
   
-  <div class="card">
-    <h2>Authentication</h2>
-    <p>Connect your bot to Twitch chat and APIs:</p>
+  <div class="dashboard">
+    <div class="card full-width">
+      <h2>Connection Status</h2>
+      <div id="twitch-status" class="status-item disconnected">
+        Twitch Chat: Checking...
+      </div>
+      <div id="discord-status" class="status-item disconnected">
+        Discord: Checking...
+      </div>
+      <div id="eventsub-status" class="status-item disconnected">
+        EventSub: Checking...
+      </div>
+    </div>
     
-    <div class="buttons">
-      <a href="/auth/user-token" class="button">Authorize with Twitch</a>
-      <a href="/auth/token-status" class="button secondary">Check Authorization Status</a>
+    <div class="card">
+      <h2>Authentication</h2>
+      <p>Connect your bot to Twitch and Discord:</p>
+      <div class="buttons">
+        <a href="/auth/twitch" class="button">Authorize Twitch</a>
+        <a href="/auth/token-status" class="button secondary">Check Token Status</a>
+      </div>
+      <div class="tip">
+        <strong>Note:</strong> After authorizing, you may need to restart the application for changes to take effect.
+      </div>
+    </div>
+    
+    <div class="card">
+      <h2>Twitch Events</h2>
+      <p>Set up notifications for follows, subscriptions, etc:</p>
+      <div class="buttons">
+        <a href="/eventsub-status" class="button">EventSub Status</a>
+        <a href="/api/eventsub/setup" class="button">Setup EventSub</a>
+      </div>
+      <div class="tip">
+        <strong>Note:</strong> Your application must be accessible from the internet for Twitch events to work.
+        If running locally, consider using a service like ngrok.
+      </div>
+    </div>
+    
+    <div class="card">
+      <h2>Follow Events</h2>
+      <p>Follow events require special authorization:</p>
+      <div class="buttons">
+        <a href="/auth/user-token" class="button">Authorize For Follow Events</a>
+        <a href="/auth/check-scopes" class="button secondary">Check Token Scopes</a>
+      </div>
+      <div class="tip">
+        <strong>Note:</strong> Follow events need special access that only the channel owner can provide.
+      </div>
+    </div>
+    
+    <div class="card">
+      <h2>Browser Sources</h2>
+      <p>Use these links in OBS as browser sources:</p>
+      <div class="buttons">
+        <a href="/alerts.html" target="_blank" class="button">Alerts Page</a>
+      </div>
+      <p>Size recommendation: 1280×720</p>
+    </div>
+    
+    <div class="card">
+      <h2>Testing</h2>
+      <p>Test alerts and notifications:</p>
+      <div class="buttons">
+        <a href="/test-events.html" class="button">Test Events</a>
+      </div>
     </div>
   </div>
   
-  <div class="card">
-    <h2>Browser Sources</h2>
-    <p>Use these links in OBS as browser sources:</p>
-    <ul>
-      <li><a href="/alerts.html" target="_blank">Alerts</a> - For follows, subscriptions, etc.</li>
-    </ul>
-    <div class="tip">
-      <strong>Tip:</strong> Add this as a Browser Source in OBS with width: 1280px, height: 720px
-    </div>
-  </div>
-  
-  <div class="card">
-    <h2>Testing Tools</h2>
-    <p>Use these tools to test your stream features:</p>
-    <div class="buttons">
-      <a href="/test-events.html" class="button">Test Stream Events</a>
-    </div>
-  </div>
-  
-  <div class="card">
-    <h2>Discord Integration</h2>
-    <p>Set up Discord notifications when you go live:</p>
-    <div class="buttons">
-      <a href="/test/discord-live" class="button">Test Discord Notification</a>
-    </div>
-  </div>
-  
-  <div class="status">
-    <h2>Connection Status</h2>
-    <div id="twitch-status" class="status-item disconnected">
-      Twitch Chat: Disconnected
-    </div>
-    <div id="discord-status" class="status-item disconnected">
-      Discord: Disconnected
-    </div>
-  </div>
-
   <script>
-    // Periodically check connection status
-    function checkStatus() {
-      fetch('/status')
-        .then(response => response.json())
-        .then(data => {
-          if (data.twitch) {
-            document.getElementById('twitch-status').className = 'status-item connected';
-            document.getElementById('twitch-status').textContent = 'Twitch Chat: Connected';
-          }
-          if (data.discord) {
-            document.getElementById('discord-status').className = 'status-item connected';
-            document.getElementById('discord-status').textContent = 'Discord: Connected';
-          }
-        })
-        .catch(err => {
-          console.error('Error checking status:', err);
-        });
-    }
-    
-    // Check status when page loads and then every 10 seconds
-    checkStatus();
-    setInterval(checkStatus, 10000);
+    // Check connection status
+    fetch('/status')
+      .then(response => response.json())
+      .then(data => {
+        if (data.twitch) {
+          document.getElementById('twitch-status').className = 'status-item connected';
+          document.getElementById('twitch-status').textContent = 'Twitch Chat: Connected';
+        } else {
+          document.getElementById('twitch-status').textContent = 'Twitch Chat: Disconnected';
+        }
+        
+        if (data.discord) {
+          document.getElementById('discord-status').className = 'status-item connected';
+          document.getElementById('discord-status').textContent = 'Discord: Connected';
+        } else {
+          document.getElementById('discord-status').textContent = 'Discord: Disconnected';
+        }
+        
+        if (data.eventSubConfigured) {
+          document.getElementById('eventsub-status').className = 'status-item connected';
+          document.getElementById('eventsub-status').textContent = 'EventSub: Configured';
+        } else {
+          document.getElementById('eventsub-status').textContent = 'EventSub: Not Configured';
+        }
+      })
+      .catch(err => {
+        console.error('Error checking status:', err);
+      });
   </script>
 </body>
 </html>

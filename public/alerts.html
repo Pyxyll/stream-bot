@@ -1,248 +1,272 @@
-<!-- public/alerts.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stream Alerts</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: transparent;
-            font-family: 'Arial', sans-serif;
-        }
-        
-        #alert-container {
-            width: 100vw;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        .alert {
-            opacity: 0;
-            transform: translateY(50px);
-            transition: all 0.5s ease-out;
-            position: absolute;
-            text-align: center;
-        }
-        
-        .alert.active {
-            opacity: 1;
-            transform: translateY(0);
-        }
-        
-        .alert-content {
-            background-color: rgba(0, 0, 0, 0.7);
-            border-radius: 10px;
-            padding: 20px;
-            color: white;
-            box-shadow: 0 0 20px rgba(100, 65, 164, 0.7);
-            border: 2px solid #6441A4;
-        }
-        
-        .alert-username {
-            font-size: 32px;
-            font-weight: bold;
-            color: #6441A4;
-            text-shadow: 0 0 5px white;
-        }
-        
-        .alert-message {
-            font-size: 24px;
-            margin-top: 10px;
-        }
-        
-        .alert-video {
-            width: 100%;
-            max-width: 400px;
-            margin-top: 20px;
-        }
-    </style>
-</head>
-<body>
-    <div id="alert-container"></div>
-    
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const socket = io();
-        const alertContainer = document.getElementById('alert-container');
-        const alertQueue = [];
-        let isPlaying = false;
-        
-        // Handle follower alerts
-        socket.on('follow', (data) => {
-            const alertData = {
-                type: 'follow',
-                username: data.username,
-                message: 'Thanks for the follow!',
-                videoSrc: '/assets/follow-animation.webm',
-                duration: 5000
-            };
-            
-            queueAlert(alertData);
-        });
-        
-        // Handle subscription alerts
-        socket.on('subscription', (data) => {
-            const alertData = {
-                type: 'subscription',
-                username: data.username,
-                message: `Thanks for the ${data.months === '1' ? 'new sub' : data.months + ' month resub'}!`,
-                videoSrc: '/assets/subscription-animation.webm', // Updated to webm format
-                duration: 8000
-            };
-            
-            queueAlert(alertData);
-        });
-        
-        // Queue an alert to be displayed
-        function queueAlert(alertData) {
-            alertQueue.push(alertData);
-            
-            if (!isPlaying) {
-                playNextAlert();
-            }
-        }
-        
-        // Play the next alert in the queue
-        function playNextAlert() {
-            if (alertQueue.length === 0) {
-                isPlaying = false;
-                return;
-            }
-            
-            isPlaying = true;
-            const alertData = alertQueue.shift();
-            
-            // Create alert element
-            const alertElement = document.createElement('div');
-            alertElement.className = 'alert';
-            
-            // Create alert content
-            const alertContent = document.createElement('div');
-            alertContent.className = 'alert-content';
-            
-            // Add username
-            const usernameElement = document.createElement('div');
-            usernameElement.className = 'alert-username';
-            usernameElement.textContent = alertData.username;
-            alertContent.appendChild(usernameElement);
-            
-            // Add message
-            const messageElement = document.createElement('div');
-            messageElement.className = 'alert-message';
-            messageElement.textContent = alertData.message;
-            alertContent.appendChild(messageElement);
-            
-            // Add video if available
-            if (alertData.videoSrc) {
-                const videoElement = document.createElement('video');
-                videoElement.className = 'alert-video';
-                videoElement.src = alertData.videoSrc;
-                videoElement.autoplay = true;
-                videoElement.muted = false;
-                videoElement.controls = false;
-                videoElement.loop = false;
-                videoElement.playsInline = true;
-                
-                // Add event listener to detect when video ends
-                videoElement.addEventListener('ended', () => {
-                    console.log('Video playback complete');
-                    // You could do something when video ends
-                });
-                
-                // Add event listener to detect if video fails to load
-                videoElement.addEventListener('error', (e) => {
-                    console.error('Video error:', e);
-                    console.error('Video source was:', alertData.videoSrc);
-                });
-                
-                alertContent.appendChild(videoElement);
-            }
-            
-            alertElement.appendChild(alertContent);
-            alertContainer.appendChild(alertElement);
-            
-            // Show the alert
-            setTimeout(() => {
-                alertElement.classList.add('active');
-            }, 100);
-            
-            // Hide the alert after the specified duration
-            setTimeout(() => {
-                alertElement.classList.remove('active');
-                
-                // Remove the element after the transition completes
-                setTimeout(() => {
-                    alertContainer.removeChild(alertElement);
-                    playNextAlert();
-                }, 500);
-            }, alertData.duration);
-        }
-
-        // Handle raid alerts
-socket.on('raid', (data) => {
-    const alertData = {
-        type: 'raid',
-        username: data.username,
-        message: `Thanks for the raid with ${data.viewers} viewers!`,
-        videoSrc: '/assets/raid-animation.webm',
-        duration: 8000
-    };
-    
-    queueAlert(alertData);
-});
-
-// Handle cheer alerts
-socket.on('cheer', (data) => {
-    const alertData = {
-        type: 'cheer',
-        username: data.username,
-        message: `Thanks for the ${data.bits} bits!`,
-        videoSrc: '/assets/cheer-animation.webm',
-        duration: 7000
-    };
-    
-    queueAlert(alertData);
-});
-
-// Update subscription handler to handle tiers and gift subs
-socket.on('subscription', (data) => {
-    let message = '';
-    
-    if (data.isGift) {
-        message = `Thanks for gifting a sub!`;
-    } else if (data.months === '1') {
-        message = `Thanks for the new sub!`;
-    } else {
-        message = `Thanks for the ${data.months} month resub!`;
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stream Alerts</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: transparent;
+      font-family: 'Arial', sans-serif;
     }
     
-    // Add tier information if available
-    if (data.tier) {
+    #alert-container {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+    
+    .alert {
+      opacity: 0;
+      transform: translateY(50px);
+      transition: all 0.5s ease-out;
+      position: absolute;
+      text-align: center;
+      max-width: 90%;
+      width: 500px;
+    }
+    
+    .alert.active {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    
+    .alert-content {
+      background-color: rgba(0, 0, 0, 0.7);
+      border-radius: 10px;
+      padding: 20px;
+      color: white;
+      box-shadow: 0 0 20px rgba(100, 65, 164, 0.7);
+      border: 2px solid #6441A4;
+    }
+    
+    .alert-username {
+      font-size: 32px;
+      font-weight: bold;
+      color: #6441A4;
+      text-shadow: 0 0 5px white;
+    }
+    
+    .alert-message {
+      font-size: 24px;
+      margin-top: 10px;
+    }
+    
+    .alert-video {
+      width: 100%;
+      max-width: 400px;
+      margin-top: 10px;
+      border-radius: 5px;
+    }
+    
+    /* Different styles for different alert types */
+    .alert[data-type="follow"] .alert-username {
+      color: #2196F3;
+    }
+    
+    .alert[data-type="subscription"] .alert-username {
+      color: #9C27B0;
+    }
+    
+    .alert[data-type="raid"] .alert-username {
+      color: #F44336;
+    }
+    
+    .alert[data-type="cheer"] .alert-username {
+      color: #4CAF50;
+    }
+  </style>
+</head>
+<body>
+  <div id="alert-container"></div>
+  
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const alertContainer = document.getElementById('alert-container');
+    const alertQueue = [];
+    let isPlaying = false;
+    
+    // Handle follower alerts
+    socket.on('follow', (data) => {
+      const alertData = {
+        type: 'follow',
+        username: data.username,
+        message: 'Thanks for the follow!',
+        videoSrc: '/assets/follow-animation.webm',
+        duration: 5000
+      };
+      
+      queueAlert(alertData);
+    });
+    
+    // Handle subscription alerts
+    socket.on('subscription', (data) => {
+      let message = '';
+      
+      if (data.isGift) {
+        message = `Thanks for gifting a sub!`;
+      } else if (data.months === '1') {
+        message = `Thanks for the new sub!`;
+      } else {
+        message = `Thanks for the ${data.months} month resub!`;
+      }
+      
+      // Add tier information if available
+      if (data.tier) {
         const tierName = data.tier === '1000' ? 'Tier 1' : 
                         data.tier === '2000' ? 'Tier 2' : 
                         data.tier === '3000' ? 'Tier 3' : '';
         
         if (tierName) {
-            message += ` (${tierName})`;
+          message += ` (${tierName})`;
         }
-    }
-    
-    const alertData = {
+      }
+      
+      const alertData = {
         type: 'subscription',
         username: data.username,
         message: message,
         videoSrc: '/assets/subscription-animation.webm',
         duration: 8000
-    };
+      };
+      
+      queueAlert(alertData);
+    });
     
-    queueAlert(alertData);
-});
-    </script>
+    // Handle raid alerts
+    socket.on('raid', (data) => {
+      const alertData = {
+        type: 'raid',
+        username: data.username,
+        message: `Thanks for the raid with ${data.viewers} viewers!`,
+        videoSrc: '/assets/raid-animation.webm',
+        duration: 8000
+      };
+      
+      queueAlert(alertData);
+    });
+    
+    // Handle cheer alerts
+    socket.on('cheer', (data) => {
+      const alertData = {
+        type: 'cheer',
+        username: data.username,
+        message: `Thanks for the ${data.bits} bits!`,
+        videoSrc: '/assets/cheer-animation.webm',
+        duration: 7000
+      };
+      
+      queueAlert(alertData);
+    });
+    
+    // Queue an alert to be displayed
+    function queueAlert(alertData) {
+      alertQueue.push(alertData);
+      
+      if (!isPlaying) {
+        playNextAlert();
+      }
+    }
+    
+    // Play the next alert in the queue
+    function playNextAlert() {
+      if (alertQueue.length === 0) {
+        isPlaying = false;
+        return;
+      }
+      
+      isPlaying = true;
+      const alertData = alertQueue.shift();
+      
+      // Create alert element
+      const alertElement = document.createElement('div');
+      alertElement.className = 'alert';
+      alertElement.setAttribute('data-type', alertData.type);
+      
+      // Create alert content
+      const alertContent = document.createElement('div');
+      alertContent.className = 'alert-content';
+      
+      // Add username
+      const usernameElement = document.createElement('div');
+      usernameElement.className = 'alert-username';
+      usernameElement.textContent = alertData.username;
+      alertContent.appendChild(usernameElement);
+      
+      // Add message
+      const messageElement = document.createElement('div');
+      messageElement.className = 'alert-message';
+      messageElement.textContent = alertData.message;
+      alertContent.appendChild(messageElement);
+      
+      // Add video if available
+      if (alertData.videoSrc) {
+        const videoElement = document.createElement('video');
+        videoElement.className = 'alert-video';
+        videoElement.src = alertData.videoSrc;
+        videoElement.autoplay = true;
+        videoElement.muted = false;
+        videoElement.controls = false;
+        videoElement.loop = false;
+        videoElement.playsInline = true;
+        
+        // Add event listener to detect when video fails to load
+        videoElement.addEventListener('error', (e) => {
+          console.error('Video error:', e);
+          console.error('Video source was:', alertData.videoSrc);
+        });
+        
+        alertContent.appendChild(videoElement);
+      }
+      
+      alertElement.appendChild(alertContent);
+      alertContainer.appendChild(alertElement);
+      
+      // Show the alert
+      setTimeout(() => {
+        alertElement.classList.add('active');
+      }, 100);
+      
+      // Hide the alert after the specified duration
+      setTimeout(() => {
+        alertElement.classList.remove('active');
+        
+        // Remove the element after the transition completes
+        setTimeout(() => {
+          alertContainer.removeChild(alertElement);
+          playNextAlert();
+        }, 500);
+      }, alertData.duration);
+    }
+    
+    // Log connection status
+    socket.on('connect', () => {
+      console.log('Connected to server');
+    });
+    
+    socket.on('disconnect', () => {
+      console.log('Disconnected from server');
+    });
+    
+    // Test alert on page load if in test mode
+    if (window.location.search.includes('test=1')) {
+      setTimeout(() => {
+        queueAlert({
+          type: 'follow',
+          username: 'TestUser',
+          message: 'This is a test alert!',
+          videoSrc: '/assets/follow-animation.webm',
+          duration: 5000
+        });
+      }, 1000);
+    }
+  </script>
 </body>
 </html>

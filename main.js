@@ -1,4 +1,4 @@
-// main.js - The entry point for your application
+// main.js - The entry point for the application
 
 // Import necessary libraries
 const express = require('express');
@@ -9,24 +9,26 @@ const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const axios = require('axios');
 require('dotenv').config(); // For environment variables
 
-// Import custom modules
-const eventSub = require('./eventsub');
+// Import our custom modules
+const auth = require('./auth');
 const userAuth = require('./user-auth');
+const eventSub = require('./eventsub');
 
 // Initialize Express app for serving web content
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-// Pass the io instance to eventSub for real-time events
-eventSub.setIO(io);
-
-// Serve static files (your browser sources, animations, etc.)
+// Serve static files (browser sources, animations, etc.)
 app.use(express.static('public'));
 
-// Use auth routes
+// Use our auth routers
+app.use(auth.router);
 app.use(userAuth.router);
 app.use(eventSub.router);
+
+// Pass the io instance to eventSub for emitting events
+eventSub.setIO(io);
 
 // Initialize Twitch client
 const twitchClient = new tmi.Client({
@@ -51,16 +53,17 @@ const discordClient = new Client({
 // Connect to Twitch chat with error handling
 twitchClient.connect().catch(err => {
   console.log('Failed to connect to Twitch chat:', err);
-  console.log('Please make sure your TWITCH_ACCESS_TOKEN is valid');
+  console.log('Please make sure your Twitch credentials are correct in .env file');
 });
 
 // Connect to Discord if token is provided
 if (process.env.DISCORD_BOT_TOKEN) {
-  discordClient.login(process.env.DISCORD_BOT_TOKEN)
-    .catch(err => {
-      console.log('Failed to connect to Discord:', err);
-      console.log('Please make sure your DISCORD_BOT_TOKEN is valid');
-    });
+  discordClient.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
+    console.log('Failed to connect to Discord:', err);
+    console.log('Discord integration will be disabled');
+  });
+} else {
+  console.log('Discord bot token not provided, Discord integration disabled');
 }
 
 // When Discord client is ready
@@ -96,6 +99,9 @@ function handleCommand(channel, tags, command, args) {
     case 'mocksub':
       handleSubscription(tags.username, args || '1');
       break;
+    case 'mockraid':
+      handleRaid(tags.username, args || '5');
+      break;
     // Add more commands as needed
     default:
       // Unknown command, do nothing
@@ -107,15 +113,15 @@ function handleCommand(channel, tags, command, args) {
 async function checkStreamStatus() {
   try {
     // Make sure we have the required tokens
-    if (!process.env.TWITCH_ACCESS_TOKEN || !process.env.TWITCH_CLIENT_ID) {
-      console.log('Missing Twitch credentials. Stream status check skipped.');
+    if (!process.env.TWITCH_CLIENT_ID || !process.env.TWITCH_APP_ACCESS_TOKEN) {
+      console.log('Missing Twitch API credentials. Stream status check skipped.');
       return;
     }
 
     const response = await axios.get(`https://api.twitch.tv/helix/streams?user_login=${process.env.TWITCH_CHANNEL}`, {
       headers: {
         'Client-ID': process.env.TWITCH_CLIENT_ID,
-        'Authorization': `Bearer ${process.env.TWITCH_ACCESS_TOKEN}`
+        'Authorization': `Bearer ${process.env.TWITCH_APP_ACCESS_TOKEN}`
       }
     });
     
@@ -145,9 +151,8 @@ async function checkStreamStatus() {
 
 // Function to send Discord notification when stream goes live
 function sendDiscordNotification(streamData) {
-  // Check if Discord is connected and channel ID is set
-  if(!discordClient.isReady() || !process.env.DISCORD_CHANNEL_ID) {
-    console.log('Discord not configured. Skipping notification.');
+  if (!process.env.DISCORD_CHANNEL_ID || !discordClient || !discordClient.isReady()) {
+    console.log('Discord integration not available, skipping notification');
     return;
   }
 
@@ -182,7 +187,8 @@ function sendDiscordNotification(streamData) {
         .setTimestamp();
       
       // Create action button text
-      const content = `Hey @everyone! **${process.env.TWITCH_CHANNEL}** is live now! Come join the stream!`;
+      const mentionEveryone = process.env.DISCORD_MENTION_EVERYONE === 'true' ? '@everyone' : '';
+      const content = `${mentionEveryone} **${process.env.TWITCH_CHANNEL}** is live now! Come join the stream!`;
       
       channel.send({ content, embeds: [embed] })
         .then(() => console.log('Discord notification sent successfully'))
@@ -209,53 +215,83 @@ function handleSubscription(username, months) {
   io.emit('subscription', { username, months });
 }
 
+// Handle raid event
+function handleRaid(username, viewers) {
+  console.log(`New raid: ${username} (${viewers} viewers)`);
+  // Emit event to browser sources
+  io.emit('raid', { username, viewers });
+}
+
+// Set up Socket.IO connection for browser sources
+io.on('connection', (socket) => {
+  console.log('Browser source connected');
+  
+  socket.on('disconnect', () => {
+    console.log('Browser source disconnected');
+  });
+});
+
 // Add a status endpoint
 app.get('/status', (req, res) => {
+  const twitchConnected = twitchClient ? twitchClient.readyState() === 'OPEN' : false;
+  const discordConnected = discordClient ? discordClient.isReady() : false;
+  
   const status = {
-    twitch: twitchClient.readyState() === 'OPEN',
-    discord: discordClient ? discordClient.isReady() : false
+    twitch: twitchConnected,
+    discord: discordConnected,
+    eventSubConfigured: !!process.env.TWITCH_WEBHOOK_SECRET && !!process.env.PUBLIC_URL
   };
   res.json(status);
 });
 
-// Add test endpoints for events
-app.get('/test/follow', (req, res) => {
-  const username = req.query.username || 'TestFollower';
-  io.emit('follow', { username });
-  
-  res.send(`
-    <h1>Follow Test Triggered</h1>
-    <p>Username: ${username}</p>
-    <p><a href="/test-events.html">Back to test dashboard</a></p>
-  `);
-});
-
+// Add test endpoints for manually triggering events
 app.get('/test/subscription', (req, res) => {
   const username = req.query.username || 'TestUser';
   const months = req.query.months || '1';
+  
+  // Emit the subscription event
   io.emit('subscription', { username, months });
   
   res.send(`
     <h1>Subscription Test Triggered</h1>
     <p>Username: ${username}</p>
     <p>Months: ${months}</p>
+    <p><a href="/test/subscription?username=AnotherUser&months=3">Try another subscription</a></p>
+    <p><a href="/test-events.html">Back to test dashboard</a></p>
+  `);
+});
+
+app.get('/test/follow', (req, res) => {
+  const username = req.query.username || 'TestFollower';
+  
+  // Emit the follow event
+  io.emit('follow', { username });
+  
+  res.send(`
+    <h1>Follow Test Triggered</h1>
+    <p>Username: ${username}</p>
+    <p><a href="/test/follow?username=AnotherFollower">Try another follow</a></p>
     <p><a href="/test-events.html">Back to test dashboard</a></p>
   `);
 });
 
 app.get('/test/raid', (req, res) => {
   const username = req.query.username || 'TestRaider';
-  const viewers = req.query.viewers || '10';
+  const viewers = req.query.viewers || '5';
+  
+  // Emit the raid event
   io.emit('raid', { username, viewers });
   
   res.send(`
     <h1>Raid Test Triggered</h1>
     <p>Username: ${username}</p>
     <p>Viewers: ${viewers}</p>
+    <p><a href="/test/raid?username=AnotherRaider&viewers=10">Try another raid</a></p>
     <p><a href="/test-events.html">Back to test dashboard</a></p>
   `);
 });
 
+// Test endpoint for Discord live notification
 app.get('/test/discord-live', async (req, res) => {
   try {
     const mockStreamData = {
@@ -279,123 +315,8 @@ app.get('/test/discord-live', async (req, res) => {
     res.status(500).send(`
       <h1>Error Sending Discord Notification</h1>
       <p>Error: ${error.message}</p>
+      <pre>${error.stack}</pre>
       <p><a href="/test-events.html">Back to test dashboard</a></p>
-    `);
-  }
-});
-
-// Add endpoint to set up EventSub
-app.get('/setup-eventsub', async (req, res) => {
-  try {
-    // Get user ID for the channel
-    const userResult = await eventSub.getUserId(process.env.TWITCH_CHANNEL);
-    
-    if (!userResult.success) {
-      return res.status(400).send(`
-        <h1>Error Setting Up EventSub</h1>
-        <p>Could not find user ID for channel: ${process.env.TWITCH_CHANNEL}</p>
-        <p>Error: ${userResult.error}</p>
-        <a href="/">Back to Dashboard</a>
-      `);
-    }
-    
-    // Setup EventSub subscriptions
-    const setupResults = await eventSub.setupEventSub(userResult.id);
-    
-    // Display results
-    let resultsHtml = '';
-    let hasErrors = false;
-    
-    for (const [type, result] of Object.entries(setupResults)) {
-      resultsHtml += `<div style="margin-bottom: 10px;">
-        <strong>${type}:</strong> ${result.success ? '✅ Success' : '❌ Failed'}
-        ${!result.success ? `<p style="color: red; margin: 5px 0 0 20px;">Error: ${result.error}</p>` : ''}
-      </div>`;
-      
-      if (!result.success) {
-        hasErrors = true;
-      }
-    }
-    
-    res.send(`
-      <h1>EventSub Setup ${hasErrors ? 'Completed with Some Errors' : 'Successful'}</h1>
-      <p>Channel: ${process.env.TWITCH_CHANNEL} (ID: ${userResult.id})</p>
-      <h2>Subscription Results:</h2>
-      <div style="margin: 20px 0;">${resultsHtml}</div>
-      <p><a href="/eventsub-status">View EventSub Status</a></p>
-      <p><a href="/">Back to Dashboard</a></p>
-    `);
-  } catch (error) {
-    console.error('Error setting up EventSub:', error);
-    res.status(500).send(`
-      <h1>Error Setting Up EventSub</h1>
-      <p>An unexpected error occurred: ${error.message}</p>
-      <a href="/">Back to Dashboard</a>
-    `);
-  }
-});
-
-// Add endpoint to view EventSub status
-app.get('/eventsub-status', async (req, res) => {
-  try {
-    const result = await eventSub.getSubscriptions();
-    
-    if (!result.success) {
-      return res.status(400).send(`
-        <h1>Error Getting EventSub Status</h1>
-        <p>Could not fetch current subscriptions</p>
-        <p>Error: ${result.error}</p>
-        <a href="/">Back to Dashboard</a>
-      `);
-    }
-    
-    const { data } = result;
-    const subscriptions = data.data || [];
-    
-    let subscriptionsHtml = '';
-    
-    if (subscriptions.length === 0) {
-      subscriptionsHtml = '<p>No active subscriptions found.</p>';
-    } else {
-      subscriptionsHtml = `<table style="width: 100%; border-collapse: collapse;">
-        <tr>
-          <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Type</th>
-          <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Status</th>
-          <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Created At</th>
-        </tr>`;
-        
-      for (const sub of subscriptions) {
-        subscriptionsHtml += `
-          <tr>
-            <td style="padding: 8px; border-bottom: 1px solid #ddd;">${sub.type}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #ddd;">${sub.status}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #ddd;">${new Date(sub.created_at).toLocaleString()}</td>
-          </tr>`;
-      }
-      
-      subscriptionsHtml += '</table>';
-    }
-    
-    res.send(`
-      <h1>EventSub Status</h1>
-      <p>Total Subscriptions: ${subscriptions.length}</p>
-      <p>Max Subscriptions: ${data.max_total_cost || 'Unknown'}</p>
-      <p>Total Cost: ${data.total_cost || 'Unknown'}</p>
-      
-      <h2>Active Subscriptions</h2>
-      ${subscriptionsHtml}
-      
-      <div style="margin-top: 20px;">
-        <a href="/setup-eventsub">Set Up EventSub</a> | 
-        <a href="/">Back to Dashboard</a>
-      </div>
-    `);
-  } catch (error) {
-    console.error('Error getting EventSub status:', error);
-    res.status(500).send(`
-      <h1>Error Getting EventSub Status</h1>
-      <p>An unexpected error occurred: ${error.message}</p>
-      <a href="/">Back to Dashboard</a>
     `);
   }
 });
@@ -405,6 +326,7 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`-----------------------------------------`);
-  console.log(`Open http://localhost:${PORT} in your browser to access the dashboard`);
+  console.log(`Dashboard URL: http://localhost:${PORT}`);
+  console.log(`Alerts URL: http://localhost:${PORT}/alerts.html`);
   console.log(`-----------------------------------------`);
 });
